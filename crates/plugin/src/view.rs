@@ -16,6 +16,13 @@ const GREEN: Color32 = Color32::from_rgb(70, 190, 110);
 const AMBER: Color32 = Color32::from_rgb(240, 170, 40);
 const RED: Color32 = Color32::from_rgb(225, 85, 75);
 
+const END_OF_DESCENT_HELP: &str = "Where your descent should end, and at what altitude.
+
+Point: an airport, fix or VOR. Blank = the arrival airport of X-Plane's FMS flight plan.
+Altitude: feet above sea level, e.g. 11000 or FL110. Blank = field elevation + 1,500 ft for an airport, 1,500 ft otherwise.
+
+The descent needs about (cruise altitude - this altitude) / 1000 x 3 nm, so the sim pauses that far from the point, plus the lead.";
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Tone {
     Muted,
@@ -170,11 +177,12 @@ fn conditions(ui: &mut Ui, vm: &mut ViewModel) {
         vm.tod_preview.as_ref(),
         |ui| {
             ui.horizontal(|ui| {
-                ui.label("Descent to");
-                id_field(ui, &mut s.tod_point, "FMS dest");
-                ui.label("at");
-                ui.add(TextEdit::singleline(vm.cross_text).hint_text("auto").desired_width(56.0).char_limit(6));
-                ui.label("ft");
+                ui.label("Reach").on_hover_text(END_OF_DESCENT_HELP);
+                id_field(ui, &mut s.tod_point, "arrival").on_hover_text(END_OF_DESCENT_HELP);
+                ui.label("at").on_hover_text(END_OF_DESCENT_HELP);
+                ui.add(TextEdit::singleline(vm.cross_text).hint_text("auto").desired_width(56.0).char_limit(6))
+                    .on_hover_text(END_OF_DESCENT_HELP);
+                ui.label("ft MSL").on_hover_text(END_OF_DESCENT_HELP);
             });
             ui.horizontal(|ui| {
                 ui.label("Pause");
@@ -298,11 +306,12 @@ fn card(
 }
 
 /// An uppercase navaid identifier field.
-fn id_field(ui: &mut Ui, text: &mut String, hint: &str) {
+fn id_field(ui: &mut Ui, text: &mut String, hint: &str) -> Response {
     let r = ui.add(TextEdit::singleline(text).hint_text(hint).desired_width(72.0).char_limit(7));
     if r.changed() {
         *text = text.to_ascii_uppercase();
     }
+    r
 }
 
 /// An iOS-style switch.

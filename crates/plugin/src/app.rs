@@ -95,8 +95,10 @@ pub struct App {
     menu: Option<Menu>,
     wpt_lookup: Lookup,
     tod_lookup: Lookup,
-    fms_dest: Option<Waypoint>,
+    fms_arrival: Option<Waypoint>,
     fms_checked: Option<Instant>,
+    /// What we last logged about the flight plan, to log only changes.
+    fms_logged: Option<String>,
 }
 
 impl App {
@@ -118,8 +120,9 @@ impl App {
             menu,
             wpt_lookup: Lookup::default(),
             tod_lookup: Lookup::default(),
-            fms_dest: None,
+            fms_arrival: None,
             fms_checked: None,
+            fms_logged: None,
         };
         app.sync_armed_indicators();
         app
@@ -175,7 +178,7 @@ impl App {
         let tod_point = if !self.settings.tod_enabled {
             None
         } else if self.settings.tod_point.is_empty() {
-            xp::fms_destination()
+            self.read_fms_arrival()
         } else {
             match xp::find_waypoint(&self.settings.tod_point, s.lat, s.lon) {
                 Some(w) => Some(w),
@@ -315,7 +318,7 @@ impl App {
             let id = self.settings.tod_point.trim().to_string();
             if id.is_empty() {
                 if self.fms_checked.is_none_or(|t| t.elapsed() >= FMS_REFRESH) {
-                    self.fms_dest = xp::fms_destination();
+                    self.fms_arrival = self.read_fms_arrival();
                     self.fms_checked = Some(Instant::now());
                 }
             } else {
@@ -324,13 +327,30 @@ impl App {
         }
     }
 
+    /// The arrival airport of X-Plane's FMS flight plan, logging what was found
+    /// whenever it changes.
+    fn read_fms_arrival(&mut self) -> Option<Waypoint> {
+        let plan = xp::flight_plan();
+        let arrival = plan.arrival();
+        let note = match &arrival {
+            Some(w) => format!("FMS arrival {} from the {} ({} entries)", w.id, plan.source, plan.entries.len()),
+            None => format!("no FMS flight plan found ({}, {} entries)", plan.source, plan.entries.len()),
+        };
+        if self.fms_logged.as_deref() != Some(note.as_str()) {
+            xp::log(&note);
+            self.fms_logged = Some(note);
+        }
+        arrival
+    }
+
     fn tod_preview(&self, here: &AircraftState) -> Preview {
         let point = if self.settings.tod_point.trim().is_empty() {
-            match &self.fms_dest {
+            match &self.fms_arrival {
                 Some(w) => Some(w.clone()),
                 None => {
                     return Preview {
-                        text: "No FMS destination: will watch for the descent from cruise.".into(),
+                        text: "No flight plan in X-Plane's FMS. Aircraft with their own FMS (Zibo, ToLiss...)                                aren't visible to plugins: type the arrival airport. Until then, the descent                                from cruise is the only cue."
+                            .into(),
                         tone: Tone::Muted,
                     }
                 }

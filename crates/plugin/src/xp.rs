@@ -1,8 +1,9 @@
 //! Thin safe wrappers over [`crate::ffi`]. Everything here must be called from
 //! X-Plane's main thread, which is the only thread plugins are called on.
 
-use std::ffi::{c_char, c_int, CString};
+use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::ptr;
 
 use pauseattod_core::geo::distance_nm;
@@ -216,7 +217,7 @@ fn waypoint_from_nav(n: NavInfo) -> Waypoint {
     Waypoint { kind: kind_name(n.kind).into(), id: n.id, lat: n.lat, lon: n.lon, elevation_ft }
 }
 
-struct FmsEntry {
+pub struct FmsEntry {
     kind: XPLMNavType,
     id: String,
     nav: XPLMNavRef,
@@ -244,29 +245,119 @@ impl FmsEntry {
         let n = nav_info(nav);
         n.id.eq_ignore_ascii_case(&self.id).then(|| airport_elevation_ft(&n)).flatten()
     }
+
+    fn has_position(&self) -> bool {
+        self.lat != 0.0 || self.lon != 0.0
+    }
 }
 
-fn fms_entry(index: c_int) -> FmsEntry {
+/// Reads one entry through either FMS API (they share the out-parameter layout).
+fn read_entry(
+    get: impl FnOnce(*mut XPLMNavType, *mut c_char, *mut XPLMNavRef, *mut c_int, *mut f32, *mut f32),
+) -> FmsEntry {
     let (mut kind, mut nav, mut alt, mut lat, mut lon) = (0, XPLM_NAV_NOT_FOUND, 0, 0.0f32, 0.0f32);
     let mut id = [0 as c_char; 256];
-    unsafe { XPLMGetFMSEntryInfo(index, &mut kind, id.as_mut_ptr(), &mut nav, &mut alt, &mut lat, &mut lon) };
+    get(&mut kind, id.as_mut_ptr(), &mut nav, &mut alt, &mut lat, &mut lon);
     FmsEntry { kind, id: buf_to_string(&id), nav, lat: lat as f64, lon: lon as f64 }
 }
 
-/// The destination entry of X-Plane's built-in FMS, if a flight plan is loaded.
-pub fn fms_destination() -> Option<Waypoint> {
-    let count = unsafe { XPLMCountFMSEntries() };
-    let dest = unsafe { XPLMGetDestinationFMSEntry() };
-    if count <= 0 || dest < 0 || dest >= count {
-        return None;
+type CountFplEntries = unsafe extern "C" fn(plan: c_int) -> c_int;
+type GetFplEntryInfo = unsafe extern "C" fn(
+    plan: c_int,
+    index: c_int,
+    kind: *mut XPLMNavType,
+    id: *mut c_char,
+    nav: *mut XPLMNavRef,
+    altitude: *mut c_int,
+    lat: *mut f32,
+    lon: *mut f32,
+);
+
+/// X-Plane 12.1's flight plan API (XPLM410). Looked up at runtime so the plugin
+/// still loads on older versions, where it is simply absent.
+struct FplApi {
+    count: CountFplEntries,
+    info: GetFplEntryInfo,
+}
+
+const XPLM_FPL_PILOT_PRIMARY: c_int = 0;
+
+fn fpl_api() -> Option<&'static FplApi> {
+    static API: OnceLock<Option<FplApi>> = OnceLock::new();
+    API.get_or_init(|| unsafe {
+        let count = xplm_symbol(c"XPLMCountFMSFlightPlanEntries")?;
+        let info = xplm_symbol(c"XPLMGetFMSFlightPlanEntryInfo")?;
+        Some(FplApi {
+            count: std::mem::transmute::<*const c_void, CountFplEntries>(count),
+            info: std::mem::transmute::<*const c_void, GetFplEntryInfo>(info),
+        })
+    })
+    .as_ref()
+}
+
+#[cfg(windows)]
+unsafe fn xplm_symbol(name: &CStr) -> Option<*const c_void> {
+    let module = GetModuleHandleA(c"XPLM_64.dll".as_ptr());
+    let p = if module.is_null() { ptr::null() } else { GetProcAddress(module, name.as_ptr()) };
+    (!p.is_null()).then_some(p)
+}
+
+#[cfg(not(windows))]
+unsafe fn xplm_symbol(name: &CStr) -> Option<*const c_void> {
+    #[cfg(target_os = "macos")]
+    const RTLD_DEFAULT: *mut c_void = -2isize as *mut c_void;
+    #[cfg(not(target_os = "macos"))]
+    const RTLD_DEFAULT: *mut c_void = ptr::null_mut();
+    let p = dlsym(RTLD_DEFAULT, name.as_ptr());
+    (!p.is_null()).then_some(p)
+}
+
+/// The pilot's flight plan in X-Plane's built-in FMS.
+pub struct FlightPlan {
+    pub entries: Vec<FmsEntry>,
+    /// Which API it came from, for the log.
+    pub source: &'static str,
+}
+
+pub fn flight_plan() -> FlightPlan {
+    if let Some(api) = fpl_api() {
+        let n = unsafe { (api.count)(XPLM_FPL_PILOT_PRIMARY) };
+        if n > 0 {
+            let entries = (0..n)
+                .map(|i| read_entry(|k, id, nav, alt, lat, lon| unsafe {
+                    (api.info)(XPLM_FPL_PILOT_PRIMARY, i, k, id, nav, alt, lat, lon)
+                }))
+                .collect();
+            return FlightPlan { entries, source: "X-Plane 12 flight plan" };
+        }
     }
-    let e = fms_entry(dest);
-    if e.lat == 0.0 && e.lon == 0.0 {
-        return None;
+    let n = unsafe { XPLMCountFMSEntries() };
+    let entries = (0..n.max(0))
+        .map(|i| read_entry(|k, id, nav, alt, lat, lon| unsafe { XPLMGetFMSEntryInfo(i, k, id, nav, alt, lat, lon) }))
+        .collect();
+    let source = if fpl_api().is_some() { "legacy FMS (X-Plane 12 plan empty)" } else { "legacy FMS" };
+    FlightPlan { entries, source }
+}
+
+impl FlightPlan {
+    /// The arrival airport: the last airport in the plan, so missed-approach
+    /// legs after it don't count. Falls back to the last positioned entry.
+    pub fn arrival(&self) -> Option<Waypoint> {
+        let e = self
+            .entries
+            .iter()
+            .rev()
+            .find(|e| e.kind == xplm_Nav_Airport && e.has_position())
+            .or_else(|| self.entries.iter().rev().find(|e| e.has_position()))?;
+        let id = if e.id.is_empty() { "FMS arrival".to_string() } else { e.id.clone() };
+        Some(Waypoint {
+            id,
+            kind: format!("FMS arrival, {}", kind_name(e.kind)),
+            lat: e.lat,
+            lon: e.lon,
+            elevation_ft: e.elevation_ft(),
+        })
     }
-    let elevation_ft = e.elevation_ft();
-    let id = if e.id.is_empty() { format!("FMS#{}", dest + 1) } else { e.id };
-    Some(Waypoint { id, kind: format!("FMS dest, {}", kind_name(e.kind)), lat: e.lat, lon: e.lon, elevation_ft })
 }
 
 /// Resolves an identifier to a position. The loaded FMS flight plan wins (it is
@@ -278,10 +369,8 @@ pub fn find_waypoint(ident: &str, near_lat: f64, near_lon: f64) -> Option<Waypoi
         return None;
     }
 
-    let count = unsafe { XPLMCountFMSEntries() };
-    for i in 0..count.max(0) {
-        let e = fms_entry(i);
-        if e.id.eq_ignore_ascii_case(&ident) {
+    for (i, e) in flight_plan().entries.iter().enumerate() {
+        if e.id.eq_ignore_ascii_case(&ident) && e.has_position() {
             return Some(Waypoint {
                 id: ident,
                 kind: format!("FMS leg {}, {}", i + 1, kind_name(e.kind)),
