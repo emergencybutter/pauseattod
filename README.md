@@ -89,3 +89,7 @@ cargo xtask dist --install "C:/X-Plane 12"        # also copies to Resources/plu
 ```
 
 Build `mac.xpl` and `lin.xpl` on those platforms with the same command, or pass `--target <triple>`. Log lines go to `X-Plane/Log.txt` with the prefix `PauseAtToD:`.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
