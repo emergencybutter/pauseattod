@@ -30,7 +30,27 @@ unsafe fn proc_address(name: &CStr) -> *const c_void {
 
 #[cfg(target_os = "linux")]
 unsafe fn proc_address(name: &CStr) -> *const c_void {
-    glXGetProcAddressARB(name.as_ptr().cast())
+    // Resolved at runtime rather than linked, so the plugin still loads if
+    // X-Plane opened libGL privately.
+    type GetProc = unsafe extern "C" fn(*const u8) -> *const c_void;
+    const RTLD_DEFAULT: *mut c_void = std::ptr::null_mut();
+    const RTLD_LAZY: std::ffi::c_int = 1;
+    static GET_PROC: std::sync::OnceLock<Option<GetProc>> = std::sync::OnceLock::new();
+    let get_proc = GET_PROC.get_or_init(|| {
+        let sym = c"glXGetProcAddressARB".as_ptr();
+        let mut p = dlsym(RTLD_DEFAULT, sym);
+        if p.is_null() {
+            let lib = dlopen(c"libGL.so.1".as_ptr(), RTLD_LAZY);
+            if !lib.is_null() {
+                p = dlsym(lib, sym);
+            }
+        }
+        (!p.is_null()).then(|| std::mem::transmute::<*const c_void, GetProc>(p))
+    });
+    match get_proc {
+        Some(f) => f(name.as_ptr().cast()),
+        None => dlsym(RTLD_DEFAULT, name.as_ptr()),
+    }
 }
 
 #[cfg(target_os = "macos")]

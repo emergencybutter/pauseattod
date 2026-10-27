@@ -117,6 +117,9 @@ extern "C" {
     pub fn XPLMCreateWindowEx(params: *mut XPLMCreateWindow_t) -> XPLMWindowID;
     pub fn XPLMDestroyWindow(win: XPLMWindowID);
     pub fn XPLMGetWindowGeometry(win: XPLMWindowID, l: *mut c_int, t: *mut c_int, r: *mut c_int, b: *mut c_int);
+    pub fn XPLMSetWindowGeometry(win: XPLMWindowID, l: c_int, t: c_int, r: c_int, b: c_int);
+    pub fn XPLMGetWindowGeometryOS(win: XPLMWindowID, l: *mut c_int, t: *mut c_int, r: *mut c_int, b: *mut c_int);
+    pub fn XPLMSetWindowGeometryOS(win: XPLMWindowID, l: c_int, t: c_int, r: c_int, b: c_int);
     pub fn XPLMGetWindowIsVisible(win: XPLMWindowID) -> c_int;
     pub fn XPLMSetWindowIsVisible(win: XPLMWindowID, visible: c_int);
     pub fn XPLMSetWindowTitle(win: XPLMWindowID, title: *const c_char);
@@ -214,8 +217,10 @@ extern "system" {
 }
 
 #[cfg(target_os = "linux")]
+#[link(name = "dl")]
 extern "C" {
-    pub fn glXGetProcAddressARB(name: *const u8) -> *const c_void;
+    pub fn dlopen(file: *const c_char, mode: c_int) -> *mut c_void;
+    pub fn dlsym(handle: *mut c_void, name: *const c_char) -> *const c_void;
 }
 
 #[cfg(target_os = "macos")]

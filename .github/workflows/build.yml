@@ -1,0 +1,109 @@
+name: Build
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p pauseattod-core
+      - run: cargo clippy --workspace --release -- -D warnings
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: lin
+            # Oldest supported runner, for the widest glibc compatibility.
+            os: ubuntu-22.04
+            targets: ""
+          - name: mac
+            os: macos-14
+            targets: aarch64-apple-darwin x86_64-apple-darwin
+          - name: win
+            os: windows-2022
+            targets: ""
+    runs-on: ${{ matrix.os }}
+    env:
+      # X-Plane 11 runs on macOS 10.15+; Apple Silicon starts at 11.0 regardless.
+      MACOSX_DEPLOYMENT_TARGET: "10.15"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.name }}
+
+      - name: Build plugin
+        shell: bash
+        run: |
+          args=()
+          for t in ${{ matrix.targets }}; do args+=(--target "$t"); done
+          cargo xtask dist "${args[@]}"
+
+      - name: Inspect binary
+        shell: bash
+        run: |
+          f=dist/PauseAtToD/64/${{ matrix.name }}.xpl
+          ls -l "$f"
+          case "${{ matrix.name }}" in
+            lin)
+              # XPLM symbols stay undefined; X-Plane provides them at load time.
+              echo "undefined XPLM symbols: $(nm -D --undefined-only "$f" | grep -c ' XP')"
+              nm -D --defined-only "$f" | grep XPlugin ;;
+            mac)
+              lipo -info "$f"
+              nm -gU "$f" | grep XPlugin ;;
+          esac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}.xpl
+          path: dist/PauseAtToD/64/${{ matrix.name }}.xpl
+          if-no-files-found: error
+
+  bundle:
+    needs: [test, build]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Assemble the all-platform plugin folder
+        run: |
+          mkdir -p PauseAtToD/64
+          cp artifacts/*/*.xpl PauseAtToD/64/
+          ls -l PauseAtToD/64
+          zip -r PauseAtToD.zip PauseAtToD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PauseAtToD
+          path: PauseAtToD
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          cp PauseAtToD.zip "PauseAtToD-$TAG.zip"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Pause at ToD $TAG" --generate-notes
+          gh release upload "$TAG" "PauseAtToD-$TAG.zip" --clobber

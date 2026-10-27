@@ -88,7 +88,9 @@ cargo xtask dist                                  # → dist/PauseAtToD/64/win.x
 cargo xtask dist --install "C:/X-Plane 12"        # also copies to Resources/plugins
 ```
 
-Build `mac.xpl` and `lin.xpl` on those platforms with the same command, or pass `--target <triple>`. Log lines go to `X-Plane/Log.txt` with the prefix `PauseAtToD:`.
+For a universal (Intel + Apple Silicon) `mac.xpl`, run `cargo xtask dist --target aarch64-apple-darwin --target x86_64-apple-darwin` on a Mac. `lin.xpl` builds on Linux with plain `cargo xtask dist`.
+
+GitHub Actions (`.github/workflows/build.yml`) runs the tests and builds all three platforms on every push. The `PauseAtToD` artifact holds the complete plugin folder with `win.xpl`, `mac.xpl` and `lin.xpl`. Pushing a `v*` tag also attaches that bundle to the matching GitHub release. Log lines go to `X-Plane/Log.txt` with the prefix `PauseAtToD:`.
 
 ## License
 
