@@ -72,7 +72,8 @@ impl EguiWindow {
         unsafe {
             XPLMSetWindowTitle(id, t.as_ptr());
             XPLMSetWindowPositioningMode(id, xplm_WindowPositionFree, -1);
-            XPLMSetWindowResizingLimits(id, 360, 300, 900, 1200);
+            // Height follows the content (see `fit_height`); only width is the user's.
+            XPLMSetWindowResizingLimits(id, 360, 120, 900, 1400);
         }
         Self {
             id,
@@ -167,8 +168,10 @@ impl EguiWindow {
     // ---------------------------------------------------------------------
     // Frame
 
-    /// Runs one egui frame and paints it. Call from the window's draw callback.
-    pub fn draw(&mut self, ui: impl FnMut(&mut egui::Ui)) {
+    /// Runs one egui frame and paints it, then fits the window's height to the
+    /// content. `ui` returns the height its content needs, in points.
+    /// Call from the window's draw callback.
+    pub fn draw(&mut self, mut ui: impl FnMut(&mut egui::Ui) -> f32) {
         gl::set_xplm_state_for_ui();
         let painter = match &mut self.painter {
             Painter::Failed => return,
@@ -201,11 +204,12 @@ impl EguiWindow {
             xform.to_points(l as f32, t as f32),
             xform.to_points(r as f32, b as f32),
         );
+        let full_height = rect.height();
         // Popped out, X-Plane draws its "pop back in" button inside our client
         // area, top right. Leave that strip to X-Plane.
-        if unsafe { XPLMWindowIsPoppedOut(self.id) } != 0 {
-            rect.min.y = (rect.min.y + POPPED_OUT_TOP_STRIP).min(rect.max.y);
-        }
+        let popped_out = unsafe { XPLMWindowIsPoppedOut(self.id) } != 0;
+        let top_strip = if popped_out { POPPED_OUT_TOP_STRIP } else { 0.0 };
+        rect.min.y = (rect.min.y + top_strip).min(rect.max.y);
 
         // X-Plane only reports clicks and drags, so poll for hover.
         let (mut mx, mut my) = (0, 0);
@@ -231,13 +235,24 @@ impl EguiWindow {
         };
         raw.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(ppp);
 
-        let mut out = self.ctx.run_ui(raw, ui);
+        let mut content_height = None;
+        let mut out = self.ctx.run_ui(raw, |root| content_height = Some(ui(root)));
         let prims = self.ctx.tessellate(std::mem::take(&mut out.shapes), out.pixels_per_point);
 
         unsafe {
             let saved = SavedState::capture(gl.as_ref());
             painter.paint_and_update_textures(xform.target_size_px(), out.pixels_per_point, &prims, &mut out.textures_delta);
             saved.restore(gl.as_ref());
+        }
+
+        for cmd in std::mem::take(&mut out.platform_output.commands) {
+            if let egui::OutputCommand::OpenUrl(u) = cmd {
+                open_url(&u.url);
+            }
+        }
+
+        if let Some(h) = content_height {
+            self.fit_height((h + top_strip).ceil(), full_height, popped_out);
         }
 
         // Route typing to us only while a text field is focused.
@@ -248,6 +263,46 @@ impl EguiWindow {
         } else if !wants && has_focus {
             unsafe { XPLMTakeKeyboardFocus(std::ptr::null_mut()) };
         }
+    }
+}
+
+impl EguiWindow {
+    /// Resizes the window, keeping its top edge, so the client area is `want`
+    /// points tall. `current` is the client height in points right now.
+    fn fit_height(&self, want: f32, current: f32, popped_out: bool) {
+        if (want - current).abs() <= 1.0 || current <= 0.0 {
+            return;
+        }
+        let (mut l, mut t, mut r, mut b) = (0, 0, 0, 0);
+        unsafe {
+            if popped_out {
+                // OS windows are sized in OS pixels; scale from the current size.
+                XPLMGetWindowGeometryOS(self.id, &mut l, &mut t, &mut r, &mut b);
+                let h = ((t - b).abs() as f32 * want / current).round() as c_int;
+                let bottom = if t > b { t - h } else { t + h };
+                XPLMSetWindowGeometryOS(self.id, l, t, r, bottom);
+            } else {
+                // One egui point is one boxel.
+                XPLMGetWindowGeometry(self.id, &mut l, &mut t, &mut r, &mut b);
+                XPLMSetWindowGeometry(self.id, l, t, r, t - want as c_int);
+            }
+        }
+    }
+}
+
+/// Opens a link from the UI in the default browser.
+fn open_url(url: &str) {
+    if !url.starts_with("https://") {
+        return;
+    }
+    #[cfg(windows)]
+    let opener = "explorer";
+    #[cfg(target_os = "macos")]
+    let opener = "open";
+    #[cfg(target_os = "linux")]
+    let opener = "xdg-open";
+    if let Err(e) = std::process::Command::new(opener).arg(url).spawn() {
+        xp::log(&format!("could not open {url}: {e}"));
     }
 }
 

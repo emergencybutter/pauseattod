@@ -82,17 +82,30 @@ pub fn install_style(ctx: &egui::Context) {
     ctx.set_theme(egui::Theme::Dark);
 }
 
-pub fn show(ui: &mut Ui, vm: &mut ViewModel, actions: &mut Vec<Action>) {
+/// Draws the window and returns the height its content needs, in points.
+pub fn show(ui: &mut Ui, vm: &mut ViewModel, actions: &mut Vec<Action>) -> f32 {
     ui.painter().rect_filled(ui.max_rect(), 0.0, BG);
-    Frame::new().inner_margin(Margin::same(12)).show(ui, |ui| {
+    let frame = Frame::new().inner_margin(Margin::same(12)).show(ui, |ui| {
         header(ui, vm, actions);
         ui.add_space(10.0);
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            conditions(ui, vm);
-            ui.add_space(4.0);
-            ui.label(RichText::new("Bind keys to pauseattod/toggle_arm and pauseattod/toggle_window.").small().color(MUTED));
-        });
+        conditions(ui, vm);
+        about(ui);
     });
+    frame.response.rect.height()
+}
+
+fn about(ui: &mut Ui) {
+    ui.add_space(2.0);
+    ui.separator();
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        let small = |t: &str| RichText::new(t).small().color(MUTED);
+        ui.label(small(concat!("Pause at ToD v", env!("CARGO_PKG_VERSION"), " · Help and feature requests:")));
+        ui.hyperlink_to(RichText::new("flyvoyager.net").small().color(ACCENT), "https://flyvoyager.net");
+    });
+    ui.label(
+        RichText::new("Bind keys to pauseattod/toggle_arm and pauseattod/toggle_window.").small().color(MUTED),
+    );
 }
 
 fn header(ui: &mut Ui, vm: &ViewModel, actions: &mut Vec<Action>) {
