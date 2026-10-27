@@ -83,15 +83,29 @@ pub fn install_style(ctx: &egui::Context) {
 }
 
 /// Draws the window and returns the height its content needs, in points.
-pub fn show(ui: &mut Ui, vm: &mut ViewModel, actions: &mut Vec<Action>) -> f32 {
+///
+/// A floating window is resized to fit, so its content is laid out at full
+/// height. A popped-out window keeps whatever size it has, so it scrolls.
+pub fn show(ui: &mut Ui, vm: &mut ViewModel, scroll: bool, actions: &mut Vec<Action>) -> f32 {
     ui.painter().rect_filled(ui.max_rect(), 0.0, BG);
-    let frame = Frame::new().inner_margin(Margin::same(12)).show(ui, |ui| {
-        header(ui, vm, actions);
-        ui.add_space(10.0);
-        conditions(ui, vm);
-        about(ui);
-    });
-    frame.response.rect.height()
+    let mut content = |ui: &mut Ui| {
+        Frame::new()
+            .inner_margin(Margin::same(12))
+            .show(ui, |ui| {
+                header(ui, vm, actions);
+                ui.add_space(10.0);
+                conditions(ui, vm);
+                about(ui);
+            })
+            .response
+            .rect
+            .height()
+    };
+    if scroll {
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, content).inner
+    } else {
+        content(ui)
+    }
 }
 
 fn about(ui: &mut Ui) {

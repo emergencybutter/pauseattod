@@ -118,8 +118,6 @@ extern "C" {
     pub fn XPLMDestroyWindow(win: XPLMWindowID);
     pub fn XPLMGetWindowGeometry(win: XPLMWindowID, l: *mut c_int, t: *mut c_int, r: *mut c_int, b: *mut c_int);
     pub fn XPLMSetWindowGeometry(win: XPLMWindowID, l: c_int, t: c_int, r: c_int, b: c_int);
-    pub fn XPLMGetWindowGeometryOS(win: XPLMWindowID, l: *mut c_int, t: *mut c_int, r: *mut c_int, b: *mut c_int);
-    pub fn XPLMSetWindowGeometryOS(win: XPLMWindowID, l: c_int, t: c_int, r: c_int, b: c_int);
     pub fn XPLMGetWindowIsVisible(win: XPLMWindowID) -> c_int;
     pub fn XPLMSetWindowIsVisible(win: XPLMWindowID, visible: c_int);
     pub fn XPLMSetWindowTitle(win: XPLMWindowID, title: *const c_char);

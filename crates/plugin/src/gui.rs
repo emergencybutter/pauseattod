@@ -43,28 +43,7 @@ pub struct EguiWindow {
     pointer_inside: bool,
     last_pointer: Option<Pos2>,
     start: Instant,
-    fit: FitState,
 }
-
-/// Closed-loop sizing of popped-out windows. The SDK doesn't say whether the
-/// OS geometry getter and setter both include the OS title bar, so instead of
-/// trusting them we measure what each resize really did and learn the offset.
-#[derive(Default)]
-struct FitState {
-    popped_out: bool,
-    want: f32,
-    attempts: u8,
-    /// Frames to wait for the OS to apply the last resize.
-    cooldown: u8,
-    /// Last request: the change we wanted (OS px) and the client height before (points).
-    pending: Option<(i32, f32)>,
-    /// Learned difference between the height we set and the height we get.
-    offset_px: i32,
-}
-
-/// Popped-out resize attempts per content change; bounds any mis-estimate.
-const FIT_MAX_ATTEMPTS: u8 = 6;
-const FIT_COOLDOWN_FRAMES: u8 = 6;
 
 impl EguiWindow {
     pub fn new(title: &str, width: i32, height: i32, cb: Callbacks) -> Self {
@@ -106,7 +85,6 @@ impl EguiWindow {
             pointer_inside: false,
             last_pointer: None,
             start: Instant::now(),
-            fit: FitState::default(),
         }
     }
 
@@ -191,9 +169,10 @@ impl EguiWindow {
     // Frame
 
     /// Runs one egui frame and paints it, then fits the window's height to the
-    /// content. `ui` returns the height its content needs, in points.
+    /// content. `ui` gets whether the window is popped out (and so can't be
+    /// fitted) and returns the height its content needs, in points.
     /// Call from the window's draw callback.
-    pub fn draw(&mut self, mut ui: impl FnMut(&mut egui::Ui) -> f32) {
+    pub fn draw(&mut self, mut ui: impl FnMut(&mut egui::Ui, bool) -> f32) {
         gl::set_xplm_state_for_ui();
         let painter = match &mut self.painter {
             Painter::Failed => return,
@@ -258,7 +237,7 @@ impl EguiWindow {
         raw.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(ppp);
 
         let mut content_height = None;
-        let mut out = self.ctx.run_ui(raw, |root| content_height = Some(ui(root)));
+        let mut out = self.ctx.run_ui(raw, |root| content_height = Some(ui(root, popped_out)));
         let prims = self.ctx.tessellate(std::mem::take(&mut out.shapes), out.pixels_per_point);
 
         unsafe {
@@ -274,7 +253,9 @@ impl EguiWindow {
         }
 
         if let Some(h) = content_height {
-            self.fit_height((h + top_strip).ceil(), full_height, popped_out, ppp);
+            if !popped_out {
+                self.fit_height(h.ceil(), full_height);
+            }
         }
 
         // Route typing to us only while a text field is focused.
@@ -289,53 +270,22 @@ impl EguiWindow {
 }
 
 impl EguiWindow {
-    /// Resizes the window, keeping its top edge, so the client area is `want`
-    /// points tall. `current` is the client height in points right now.
-    fn fit_height(&mut self, want: f32, current: f32, popped_out: bool, pixels_per_point: f32) {
-        if current <= 0.0 {
+    /// Resizes the floating window, keeping its top edge, so the client area is
+    /// `want` points tall. `current` is the client height in points right now.
+    ///
+    /// Popped-out windows are left alone: X-Plane doesn't follow OS-level
+    /// resizes of them (its own idea of the window keeps the old size), so
+    /// they keep the fitted size they had when popped out.
+    fn fit_height(&self, want: f32, current: f32) {
+        if current <= 0.0 || (want - current).abs() <= 1.0 {
             return;
         }
-        if !popped_out {
-            self.fit = FitState::default();
-            if (want - current).abs() > 1.0 {
-                // Floating windows are in boxels, and one egui point is one boxel.
-                let (mut l, mut t, mut r, mut b) = (0, 0, 0, 0);
-                unsafe {
-                    XPLMGetWindowGeometry(self.id, &mut l, &mut t, &mut r, &mut b);
-                    XPLMSetWindowGeometry(self.id, l, t, r, t - want as c_int);
-                }
-            }
-            return;
-        }
-
-        let f = &mut self.fit;
-        if !f.popped_out {
-            *f = FitState { popped_out: true, ..FitState::default() };
-        }
-        if f.cooldown > 0 {
-            f.cooldown -= 1;
-            return;
-        }
-        if let Some((wanted, before)) = f.pending.take() {
-            let got = ((current - before) * pixels_per_point).round() as i32;
-            f.offset_px = (f.offset_px - (got - wanted)).clamp(-200, 200);
-        }
-        if (want - f.want).abs() > 0.5 {
-            f.want = want;
-            f.attempts = 0;
-        }
-        if (want - current).abs() <= 1.0 || f.attempts >= FIT_MAX_ATTEMPTS {
-            return;
-        }
-        f.attempts += 1;
-        let wanted = ((want - current) * pixels_per_point).round() as i32;
+        // Floating windows are in boxels, and one egui point is one boxel.
         let (mut l, mut t, mut r, mut b) = (0, 0, 0, 0);
-        unsafe { XPLMGetWindowGeometryOS(self.id, &mut l, &mut t, &mut r, &mut b) };
-        let h = ((t - b).abs() + wanted + f.offset_px).max(100);
-        let bottom = if t > b { t - h } else { t + h };
-        unsafe { XPLMSetWindowGeometryOS(self.id, l, t, r, bottom) };
-        f.pending = Some((wanted, current));
-        f.cooldown = FIT_COOLDOWN_FRAMES;
+        unsafe {
+            XPLMGetWindowGeometry(self.id, &mut l, &mut t, &mut r, &mut b);
+            XPLMSetWindowGeometry(self.id, l, t, r, t - want as c_int);
+        }
     }
 }
 

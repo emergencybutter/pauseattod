@@ -296,7 +296,7 @@ impl App {
             wpt_preview,
             tod_preview,
         };
-        self.window.draw(|ui| view::show(ui, &mut vm, &mut actions));
+        self.window.draw(|ui, popped_out| view::show(ui, &mut vm, popped_out, &mut actions));
 
         for a in actions {
             match a {
