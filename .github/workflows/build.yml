@@ -84,6 +84,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -91,6 +94,8 @@ jobs:
         run: |
           mkdir -p PauseAtToD/64
           cp artifacts/*/*.xpl PauseAtToD/64/
+          cp src/packaging/README.txt PauseAtToD/README.txt
+          cp src/LICENSE PauseAtToD/LICENSE.txt
           ls -l PauseAtToD/64
           zip -r PauseAtToD.zip PauseAtToD
       - uses: actions/upload-artifact@v4
