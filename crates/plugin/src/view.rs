@@ -101,7 +101,7 @@ fn about(ui: &mut Ui) {
         ui.spacing_mut().item_spacing.x = 4.0;
         let small = |t: &str| RichText::new(t).small().color(MUTED);
         ui.label(small(concat!("Pause at ToD v", env!("CARGO_PKG_VERSION"), " · Help and feature requests:")));
-        ui.hyperlink_to(RichText::new("flyvoyager.net").small().color(ACCENT), "https://flyvoyager.net");
+        ui.hyperlink_to(RichText::new("flyvoyager.net/discord").small().color(ACCENT), "https://flyvoyager.net/discord");
     });
     ui.label(
         RichText::new("Bind keys to pauseattod/toggle_arm and pauseattod/toggle_window.").small().color(MUTED),
