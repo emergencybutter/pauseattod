@@ -127,15 +127,15 @@ unsafe extern "C" fn draw_window(_: XPLMWindowID, _: *mut c_void) {
 
 unsafe extern "C" fn mouse_click(_: XPLMWindowID, x: c_int, y: c_int, status: c_int, _: *mut c_void) -> c_int {
     guard("mouse", 1, || {
-        with_app(|a| a.window().on_mouse(x, y, status, egui::PointerButton::Primary));
-        1
+        let consumed = with_app(|a| a.window().on_mouse(x, y, status, egui::PointerButton::Primary));
+        consumed.unwrap_or(true) as c_int
     })
 }
 
 unsafe extern "C" fn right_click(_: XPLMWindowID, x: c_int, y: c_int, status: c_int, _: *mut c_void) -> c_int {
     guard("mouse", 1, || {
-        with_app(|a| a.window().on_mouse(x, y, status, egui::PointerButton::Secondary));
-        1
+        let consumed = with_app(|a| a.window().on_mouse(x, y, status, egui::PointerButton::Secondary));
+        consumed.unwrap_or(true) as c_int
     })
 }
 

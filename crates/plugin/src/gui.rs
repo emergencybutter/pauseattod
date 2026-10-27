@@ -42,6 +42,11 @@ pub struct EguiWindow {
     modifiers: Modifiers,
     pointer_inside: bool,
     last_pointer: Option<Pos2>,
+    /// Top edge of the area egui draws in, from the last frame. Popped out,
+    /// X-Plane's own controls live above it.
+    content_top: Option<f32>,
+    /// The current click started on X-Plane's controls, so it belongs to X-Plane.
+    passthrough: bool,
     start: Instant,
 }
 
@@ -84,6 +89,8 @@ impl EguiWindow {
             modifiers: Modifiers::default(),
             pointer_inside: false,
             last_pointer: None,
+            content_top: None,
+            passthrough: false,
             start: Instant::now(),
         }
     }
@@ -114,16 +121,25 @@ impl EguiWindow {
     // ---------------------------------------------------------------------
     // Input from X-Plane callbacks
 
-    pub fn on_mouse(&mut self, x: c_int, y: c_int, status: c_int, button: PointerButton) {
-        let Some(pos) = self.to_points(x, y) else { return };
+    /// Returns whether we consumed the event; clicks on X-Plane's own window
+    /// controls (e.g. the pop-in button) are left to X-Plane.
+    pub fn on_mouse(&mut self, x: c_int, y: c_int, status: c_int, button: PointerButton) -> bool {
+        let Some(pos) = self.to_points(x, y) else { return true };
+        if status == xplm_MouseDown {
+            self.passthrough = self.content_top.is_some_and(|top| pos.y < top);
+        }
+        if self.passthrough {
+            return false;
+        }
         self.events.push(Event::PointerMoved(pos));
         self.last_pointer = Some(pos);
         let pressed = match status {
             xplm_MouseDown => true,
             xplm_MouseUp => false,
-            _ => return, // xplm_MouseDrag: the move above is all egui needs
+            _ => return true, // xplm_MouseDrag: the move above is all egui needs
         };
         self.events.push(Event::PointerButton { pos, button, pressed, modifiers: self.modifiers });
+        true
     }
 
     pub fn on_wheel(&mut self, x: c_int, y: c_int, wheel: c_int, clicks: c_int) {
@@ -211,6 +227,7 @@ impl EguiWindow {
         let popped_out = unsafe { XPLMWindowIsPoppedOut(self.id) } != 0;
         let top_strip = if popped_out { POPPED_OUT_TOP_STRIP } else { 0.0 };
         rect.min.y = (rect.min.y + top_strip).min(rect.max.y);
+        self.content_top = popped_out.then_some(rect.min.y);
 
         // X-Plane only reports clicks and drags, so poll for hover.
         let (mut mx, mut my) = (0, 0);
