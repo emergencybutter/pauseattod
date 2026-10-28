@@ -16,12 +16,7 @@ const GREEN: Color32 = Color32::from_rgb(70, 190, 110);
 const AMBER: Color32 = Color32::from_rgb(240, 170, 40);
 const RED: Color32 = Color32::from_rgb(225, 85, 75);
 
-const END_OF_DESCENT_HELP: &str = "Where your descent should end, and at what altitude.
-
-Point: an airport, fix or VOR. Blank = the arrival airport of X-Plane's FMS flight plan.
-Altitude: feet above sea level, e.g. 11000 or FL110. Blank = field elevation + 1,500 ft for an airport, 1,500 ft otherwise.
-
-The descent needs about (cruise altitude - this altitude) / 1000 x 3 nm, so the sim pauses that far from the point, plus the lead.";
+const END_OF_DESCENT_HELP: &str = "Where your descent should end and at what altitude. This plugin will attempt to guess your destination based on your flight plan, as well as the airport elevation, however you should make sure destination and elevation are guessed or set correctly before arming.";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Tone {

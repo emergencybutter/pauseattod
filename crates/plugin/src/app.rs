@@ -349,7 +349,7 @@ impl App {
                 Some(w) => Some(w.clone()),
                 None => {
                     return Preview {
-                        text: "No flight plan in X-Plane's FMS. Aircraft with their own FMS (Zibo, ToLiss...)                                aren't visible to plugins: type the arrival airport. Until then, the descent                                from cruise is the only cue."
+                        text: "Can't determine arrival from FMS, please enter it manually here."
                             .into(),
                         tone: Tone::Muted,
                     }
