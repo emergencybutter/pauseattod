@@ -1,0 +1,5 @@
+64/lin.xpl|4758080
+64/mac.xpl|8386160
+64/win.xpl|4908544
+LICENSE.txt|1070
+README.txt|3345
