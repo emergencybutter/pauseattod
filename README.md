@@ -90,7 +90,7 @@ cargo xtask dist --install "C:/X-Plane 12"        # also copies to Resources/plu
 
 For a universal (Intel + Apple Silicon) `mac.xpl`, run `cargo xtask dist --target aarch64-apple-darwin --target x86_64-apple-darwin` on a Mac. `lin.xpl` builds on Linux with plain `cargo xtask dist`.
 
-GitHub Actions (`.github/workflows/build.yml`) runs the tests and builds all three platforms on every push. The `PauseAtToD` artifact holds the complete plugin folder with `win.xpl`, `mac.xpl` and `lin.xpl`. Pushing a `v*` tag also attaches that bundle to the matching GitHub release. Log lines go to `X-Plane/Log.txt` with the prefix `PauseAtToD:`.
+GitHub Actions (`.github/workflows/build.yml`) runs the tests and builds all three platforms on every push. The `PauseAtToD` artifact holds the complete plugin folder with `win.xpl`, `mac.xpl` and `lin.xpl`. Pushing a `v*` tag also attaches that bundle to the matching GitHub release. Stable tags (no `-` in them) also force-push the plugin folder, with its CRC32 whitelist and sizes list, to the orphan `skunkcrafts` branch. That branch is the SkunkCrafts Updater module named in `packaging/skunkcrafts_updater.cfg`, which ships in the zip. Log lines go to `X-Plane/Log.txt` with the prefix `PauseAtToD:`.
 
 ## License
 

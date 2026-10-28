@@ -96,6 +96,9 @@ jobs:
           cp artifacts/*/*.xpl PauseAtToD/64/
           cp src/packaging/README.txt PauseAtToD/README.txt
           cp src/LICENSE PauseAtToD/LICENSE.txt
+          version=dev
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then version="${GITHUB_REF_NAME#v}"; fi
+          sed "s/REPLACE_ME/$version/" src/packaging/skunkcrafts_updater.cfg > PauseAtToD/skunkcrafts_updater.cfg
           ls -l PauseAtToD/64
           zip -r PauseAtToD.zip PauseAtToD
       - uses: actions/upload-artifact@v4
@@ -112,3 +115,36 @@ jobs:
           cp PauseAtToD.zip "PauseAtToD-$TAG.zip"
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Pause at ToD $TAG" --generate-notes
           gh release upload "$TAG" "PauseAtToD-$TAG.zip" --clobber
+      # SkunkCrafts Updater reads the plugin folder plus its file lists from the
+      # `skunkcrafts` branch (see packaging/skunkcrafts_updater.cfg). Only stable
+      # tags are published there: anything with a "-" (v1.0.0-beta1) is skipped.
+      - name: Publish to the SkunkCrafts Updater branch
+        if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-')
+        run: |
+          python3 - PauseAtToD <<'EOF'
+          import os, sys, zlib
+          root = sys.argv[1]
+          white, sizes = [], []
+          for d, _, files in os.walk(root):
+              for f in files:
+                  path = os.path.join(d, f)
+                  rel = os.path.relpath(path, root).replace(os.sep, "/")
+                  if rel.startswith("skunkcrafts_updater"):
+                      continue
+                  data = open(path, "rb").read()
+                  white.append(f"{rel}|{zlib.crc32(data)}")
+                  sizes.append(f"{rel}|{len(data)}")
+          for name, lines in (("whitelist", white), ("sizeslist", sizes)):
+              with open(os.path.join(root, f"skunkcrafts_updater_{name}.txt"), "w", newline="\n") as out:
+                  out.write("\n".join(sorted(lines)) + "\n")
+          EOF
+          cat PauseAtToD/skunkcrafts_updater_*.txt
+          cd src
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan skunkcrafts
+          git rm -rfq .
+          cp -r ../PauseAtToD/. .
+          git add -A
+          git commit -qm "SkunkCrafts release $GITHUB_REF_NAME"
+          git push -f origin skunkcrafts

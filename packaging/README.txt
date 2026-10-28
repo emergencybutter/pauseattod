@@ -21,7 +21,8 @@ INSTALLATION
 3. Start X-Plane. "Pause at ToD" now appears in the Plugins menu.
 
 Updating: quit X-Plane and replace the PauseAtToD folder. Your settings
-are kept.
+are kept. If you use SkunkCrafts Updater, it picks up the plugin from the
+included skunkcrafts_updater.cfg and keeps it up to date for you.
 
 macOS: if X-Plane refuses to load the plugin because it was downloaded,
 run this in Terminal (adjust the path to your X-Plane folder):
