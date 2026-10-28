@@ -2,6 +2,12 @@
 
 An X-Plane 11.50+/12 plugin, written in Rust, that pauses the sim when a condition you've armed comes true. You can step away during cruise and come back to a paused aircraft at top of descent, near a waypoint, at an altitude, or after a set time.
 
+## Installing and updating
+
+Download `PauseAtToD-vX.Y.Z.zip` from the [latest release](https://github.com/emergencybutter/pauseattod/releases/latest) and copy the `PauseAtToD` folder into `X-Plane/Resources/plugins/`.
+
+**Updating through [SkunkCrafts Updater](https://forums.x-plane.org/forums/topic/292710-20250206-skunkcrafts-updater-standalone-client-v32d-available/) is recommended.** The plugin folder includes a `skunkcrafts_updater.cfg`, so the updater picks up Pause at ToD on its own and fetches each new release. Without it, quit X-Plane and replace the `PauseAtToD` folder. Your settings are kept either way.
+
 ## Using it
 
 **Plugins → Pause at ToD → Settings...** opens a modern, resizable X-Plane floating window. It's drawn with [egui](https://github.com/emilk/egui) and follows X-Plane's UI scale:
